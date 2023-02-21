@@ -1,0 +1,26 @@
+---
+title: "Assignment 6"
+author: "Chee Kay Cheong"
+date: "2023-02-21"
+output: github_document
+---
+
+```{r setup, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(rpart) # construct CaRT
+library(caret) # construct CaRT
+library(rpart.plot) # makes cleaner looking tree plots
+library(pROC) # generate ROC
+library(e1071) # SVM 
+library(kernlab) #???
+library(NHANES)
+```
+
+# Load and clean dataset
+
+```{r}
+NHANES = data("NHANES")
+```
+
