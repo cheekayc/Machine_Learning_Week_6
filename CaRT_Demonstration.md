@@ -704,9 +704,11 @@ is the target class (target class is usually the outcome (1) = higher
 firearm fatalities). The third number shows the percentage of data in
 the node. The root node has 100% of the data.
 
-The 1st split is at the life expectancy. \* Counties that have higher
-life expectancy (\>= 77 (yes)), the firearm fatalities ????????? Need
-clarification
+The 1st split is at the life expectancy. \* In the node where the
+counties that have higher life expectancy (\>= 77 (yes)): 1) the
+majority class is 0 (low firearm fatalities); 2) only 26% of them in
+this node has the target class, which is high firearm fatalities. 3)
+This node contains 45% of the entire data.
 
 ### Run variable importance
 
