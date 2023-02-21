@@ -7,6 +7,11 @@ output: github_document
 ```{r setup, message = FALSE, warning = FALSE}
 knitr::opts_chunk$set(message = FALSE, warning = FALSE)
 
+library(tidyverse)
+library(caret)
+library(e1071) # SVM 
+library(kernlab) #???
+library(pROC) # generate ROC
 ```
 
 # Demonstration of Support Vector Classifiers
@@ -15,110 +20,132 @@ Data Citation: We are using a dataset containing features related to heart disea
 
 ***
 
-### Step 1: Load packages
-
-e1071 contains the svm function. Again, we'll be using caret
-
-```{r packages}
-library(e1071)
-```
-
-##Step 2: Load data and perform minor cleaning, check and recode missings etc.
+### Load data and perform minor cleaning, check and recode missings etc.
 1. How to load a flat text file
 2. How to assign column names when none are provided
 3. How to check variable types across the dataframe
 4. How to recode missing indicators, change variable types and explore variable distributions
 
-
 ```{r data_prep_svc}
-heart.data <- read.csv("C:/Users/js5406/Downloads/processed.cleveland.data", header=FALSE)
+# Read in dataset
+heart.data = read.csv("./Data/processed.cleveland.data", header = FALSE)
 
-var.names<-c("age", "sex", "pain_type", "resting_sysbp", "chol", "fast_blsugar_gt120", "rest_ecg", "max_hr", "exerc_angina", "ST_depression", "ST_slope", "vessels_colorflu", "defect", "heart_disease_present")
+# Create informative variable names
+var.names = c("age", "sex", "pain_type", "resting_sysbp", "chol", "fast_blsugar_gt120", "rest_ecg", "max_hr", "exerc_angina", "ST_depression", "ST_slope", "vessels_colorflu", "defect", "heart_disease_present")
 
-colnames(heart.data)<-var.names
+# Assign variable names to each column
+colnames(heart.data) = var.names
+
+# Check variable types
 str(heart.data)
 
-heart.data[heart.data=="?"]<-NA
+# Find any observation with a "?" and convert it to NA
+heart.data[heart.data == "?"] = NA
 
-heart.data$defect<-as.numeric(factor(heart.data$defect))
-heart.data$vessels_colorflu<-as.numeric(factor(heart.data$vessels_colorflu))
+# Change variable types (must make the outcome a factor!)
+heart.data = 
+  heart.data %>% 
+  mutate(
+    defect = as.numeric(factor(defect)),
+    vessels_colorflu = as.numeric(factor(vessels_colorflu)),
+    outcome = as_factor(ifelse(heart_disease_present == 0, 0, 1)), # if heart_disease_present = 0, outcome = 0; else, outcome = 1.
+    outcome = fct_recode(outcome, 'HDNotPresent' = '0', 'HDPresent' = '1')) %>% 
+  select(-heart_disease_present)
 
-heart.data$outcome<-ifelse(heart.data$heart_disease_present==0, 0,1)
-heart.data$heart_disease_present<-NULL
-heart.data$outcome<-factor(heart.data$outcome)
-levels(heart.data$outcome)<-c("HDNotPresent", "HDPresent")
-str(heart.data)
 summary(heart.data)
 
 #Remove the missings
-heart.data.nomiss<-na.omit(heart.data)
+heart.data.nomiss = na.omit(heart.data)
 
-#Set No Heart Disease as Reference Level
-heart.data.nomiss$outcome<-relevel(heart.data.nomiss$outcome, ref="HDNotPresent")
-
+# For the `heart.data.nomiss` dataset, set 'No Heart Disease' as Reference Level
+heart.data.nomiss$outcome = relevel(heart.data.nomiss$outcome, ref = "HDNotPresent")
 ```
 
-### Step 3: Partition data into training and testing
+### Partition data into training and testing
 
 ```{r datapart_svc}
 set.seed(123)
 
-train.indices<-createDataPartition(y=heart.data.nomiss$outcome,p=0.7,list=FALSE)
-training<-heart.data.nomiss[train.indices,]
-testing<-heart.data.nomiss[-train.indices,]
+train.indices = createDataPartition(y = heart.data.nomiss$outcome, p = 0.7, list = FALSE)
+training = heart.data.nomiss[train.indices, ]
+testing = heart.data.nomiss[-train.indices, ]
 ```
 
 
-### Train support vector classifier (or support vector machine with linear kernal) in Caret
+### Train Support Vector Classifier (or Support Vector Machine with Linear Kernel) in `Caret`
 
-Caret doesn't automatically tune hyperparameter C. You need to specify values to try.The smaller the value of C, the less misclassification the SVM will accept.
+`Caret` doesn't automatically tune the hyperparameter *C* (*C* controls how much misclassification the SVM will accept). We need to specify values to try. The smaller the value of C, the less misclassification the SVM will accept.
 
+The default measures is accuracy. We can do predicted probabilities, AUROC, etc.
 ```{r svc}
 modelLookup("svmLinear")
 
 set.seed(123)
 
-#Set 10-fold cross-validation. Note if you want predicted probabilities, you need to set class Probs=True
-train_control<-trainControl(method="cv", number=10, classProbs = T)
+#Set control settings: 10-fold cross-validation. If we want predicted probabilities, we need to set "classProbs = True".
+train_control = trainControl(method = "cv", number = 10, classProbs = T)
 
-#Train model. Note we are scaling data
-svm.caret<-train(outcome ~ ., data=training, method="svmLinear", trControl=train_control, preProcess=c("center", "scale"))
+#Train model. Note we are scaling data because SVM is based on distance.
+svm.caret = train(outcome ~ ., data = training, method = "svmLinear", trControl = train_control, preProcess = c("center", "scale"))
+
+# Show results
 svm.caret
+```
 
-#Incorporate different values for cost (C)
-svm.caret.2<-train(outcome ~ ., data=training, method="svmLinear",  trControl=train_control, preProcess=c("center", "scale"), tuneGrid=expand.grid(C=seq(0.001,2, length=30)))
+The results show that there are 208 samples in the training model, 13 predictors, 2 classes of outcome. We have preprocessed (center and scale) the data and resampled using cross-validation. The average accuracy is 0.8170996. **Note that we did not tune the parameter (C)**, so it says the tuning parameter 'C' was held constant at a value of 1.
 
-#Visualize accuracy versus values of C
+### Tune the hyperparameter
+
+```{r}
+set.seed(123)
+
+# Incorporate different values for cost (C)
+tune_grid = expand.grid(C = seq(0.001, 2, length = 30))
+
+svm.caret.2 = train(outcome ~ ., data = training, method = "svmLinear", trControl = train_control, preProcess = c("center", "scale"), tuneGrid = tune_grid)
+
+# Visualize accuracy versus values of C
 plot(svm.caret.2)
 
-#Obtain metrics of accuracy from training
+# Obtain metrics of accuracy from training
 confusionMatrix(svm.caret.2)
 
 #See information about final model
 svm.caret.2$finalModel
+```
+We can see from the result that using different values of C (other than 1) gives us a higher overall accuracy (0.8413). R automatically picks the best tuned value of C as the final model. The best tuned C is 0.2078. It has 86 support vectors, with an average training error of 0.1442. It also tells us that we have included a probability model. 
 
+### Apply model to test set and get evaluation metrics
+
+Option 1: Confusion Matrix
+```{r}
 #Make predictions in testset
-svm.pred.test<-predict(svm.caret.2, testing)
+svm.pred.test = predict(svm.caret.2, testing)
 
 #Get evaluation metrics from test set
-confusionMatrix(svm.pred.test, testing$outcome, positive="HDPresent")
+confusionMatrix(svm.pred.test, testing$outcome, positive = "HDPresent")
+```
 
-#Create ROC Curve for Analysis
-pred.prob<-predict(svm.caret.2, testing, type="prob")
+Option 2: ROC 
+```{r}
+# First created predicted probablities using data in the test set
+pred.prob = predict(svm.caret.2, testing, type = "prob")
 
-#Another potential evaluation: Area under the Reciver Operating Curve (AUROC)
-analysis <- roc(response=testing$outcome, predictor=pred.prob[,2])
-plot(1-analysis$specificities,analysis$sensitivities,type="l",
-ylab="Sensitivity",xlab="1-Specificity",col="black",lwd=2,
-main = "ROC Curve for Heart Disease Classification")
-abline(a=0,b=1)
+# Then conduct analysis using `roc` function
+analysis = roc(response = testing$outcome, predictor = pred.prob[ ,2]) # Response = actual observed, predictor = predicted probabilities
+
+# Plot to see the ROC curve
+plot(1-analysis$specificities, analysis$sensitivities, type = "l",
+  ylab = "Sensitivity", xlab = "1-Specificity", col = "black", lwd = 2,
+  main = "ROC Curve for Heart Disease Classification")
+abline(a = 0, b = 1)
 ```
 
 ### Notes about Variable Importance
-Variable Importance for the SVC For SVM classification models, most packages do not have built-in variable importance. The default behavior in caret for SVM is to compute the area under the ROC curve. FROM DOCUMENTATION FOR CARET For classification, ROC curve analysis is conducted on each predictor. For two class problems, a series of cutoffs is applied to the predictor data to predict the class. The sensitivity and specificity are computed for each cutoff and the ROC curve is computed. The trapezoidal rule is used to compute the area under the ROC curve. This area is used as the measure of variable importance. More detail is 
+
+Variable Importance for the SVC For SVM classification models, most packages do not have built-in variable importance. The default behavior in `caret` for SVM is to compute the area under the ROC curve. FROM DOCUMENTATION FOR CARET For classification, ROC curve analysis is conducted on each predictor. For two class problems, a series of cutoffs is applied to the predictor data to predict the class. The sensitivity and specificity are computed for each cutoff and the ROC curve is computed. The trapezoidal rule is used to compute the area under the ROC curve. This area is used as the measure of variable importance. More detail is 
 
 https://topepo.github.io/caret/variable-importance.html
-
 
 ```{r}
 varImp(svm.caret.2)

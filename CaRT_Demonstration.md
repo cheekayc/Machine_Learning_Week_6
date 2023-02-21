@@ -806,10 +806,10 @@ print(eval.results)
 
 ``` r
 #Another potential evaluation: Area under the Receiver Operating Curve (AUROC)
-analysis = roc(response = test.data.q2$firearm.class, predictor = pred.firearm.prob[,2])
+analysis = roc(response = test.data.q2$firearm.class, predictor = pred.firearm.prob[ ,2])
 
-plot(1-analysis$specificities, analysis$sensitivities, type="l",
-  ylab = "Sensitivity", xlab = "1-Specificity", col="black", lwd = 2,
+plot(1-analysis$specificities, analysis$sensitivities, type = "l",
+  ylab = "Sensitivity", xlab = "1-Specificity", col = "black", lwd = 2,
   main = "ROC Curve for Greater Firearm Fatalities")
 abline(a = 0, b = 1)
 ```
