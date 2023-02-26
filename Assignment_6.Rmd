@@ -18,9 +18,126 @@ library(kernlab) #???
 library(NHANES)
 ```
 
-# Load and clean dataset
+# Part 1 
+
+## Load and clean dataset, Data Partitioning
+
+Restrict the `NHANES` data to the list of 11 variables below. 
+
+Variables: "Age", "Race1", "Education", "HHIncome", "Weight", "Height", "Pulse", "Diabetes", "BMI", "PhysActive", "Smoke100".
 
 ```{r}
-NHANES = data("NHANES")
+# Load dataset
+data("NHANES")
+
+# Select variables, clean dataset, remove missing values, set reference group for outcome
+nhanes = NHANES %>% 
+  janitor::clean_names() %>% 
+  select(age, race1, education, hh_income, weight, height, pulse, diabetes, bmi, phys_active, smoke100) %>% 
+  drop_na() 
+
+# Set 'No' as reference level for `diabetes`
+nhanes$diabetes = relevel(nhanes$diabetes, ref = "No")
+
+# Check proportion of outcome 
+nhanes %>% 
+  select(diabetes) %>% 
+  group_by(diabetes) %>% 
+  count()
+# Yes = 659, No = 5697, Not balanced...
 ```
+
+Partition the data into training and testing using a 70/30 split.
+```{r}
+set.seed(123)
+
+training.index = 
+  nhanes$diabetes %>% 
+  createDataPartition(p = 0.7, list = F)
+
+training = nhanes[training.index, ]
+testing = nhanes[-training.index, ]
+
+# I want to see if I have enough outcomes in my training dataset and if I should do "up" or "down" sample.
+training %>% 
+  select(diabetes) %>% 
+  group_by(diabetes) %>% 
+  count()
+```
+
+# Part 2 & 3
+
+## Construct 3 prediction models, choose hyperparameters, and compare performance 
+
+### Classification Tree
+
+```{r}
+set.seed(123)
+
+# Create 10-fold cross-validation and use down-sampling because of imbalance in outcome
+train.control = trainControl(method = "cv", number = 10, sampling = "down")
+
+# Create sequence of cp parameters to try 
+grid = expand.grid(cp = seq(0.001, 0.5, by = 0.01))
+
+# Train model
+class_tree = train(diabetes ~ ., data = training, method = "rpart", trControl = train.control, tuneGrid = grid)
+
+# Find best tune cp
+class_tree
+class_tree$bestTune
+
+# Obtain metrics of accuracy from training
+confusionMatrix(class_tree)
+```
+The cp value = 0.491 has the highest accuracy (0.8961806). Average accuracy of this model is 0.8962. Note that none of the 'Yes' diabetes were correctly predicted as 'Yes' diabetes.
+
+### Support Vector Classifier
+
+```{r}
+set.seed(123)
+
+# Use same control settings as created in code chunk above
+# Incorporate different values for cost (C)
+tune_grid = expand.grid(C = seq(0.001, 2, length = 50))
+
+svm_model = train(diabetes ~ ., data = training, method = "svmLinear", trControl = train.control, preProcess = c("center", "scale"), tuneGrid = tune_grid)
+
+# Visualize accuracy versus values of C
+plot(svm_model)
+
+# Obtain metrics of accuracy from training
+confusionMatrix(svm_model)
+
+#See information about final model
+svm_model$results
+svm_model$finalModel
+```
+The best tuned parameter (C) = 1.9184. It has 549 support vectors, with an average training error of 0.2359 and an average accuracy of 0.7126.
+
+### Logistic Regression
+
+```{r}
+set.seed(123)
+
+logreg = train(diabetes ~ ., data = training, method = "glm", trControl = train.control, preProcess = c("center", "scale"))
+
+logreg$results
+
+confusionMatrix(logreg)
+```
+Average accuracy = 0.7148.
+
+# Part 4
+
+### Select "optimal" model
+
+I have performed Accuracy Test to compare performance of all three models. Although the Classification Tree model gives us the highest accuracy among all three models, its sensitivity is 0. None of the 'Yes' diabetes were correctly predicted as 'Yes' diabetes, so I decided not to use this model for Diabetes prediction.
+
+Between the SVM and Logistic Regression models, I decided to choose the **SVM model** although the Logistic Regression model has a higher accuracy than the SVM model. However, according to the confusion matrix, more percentage of 'Yes' diabetes were correctly predicted as 'Yes' diabetes in the SVM model (8.1% compared to 7.9%). 
+
+### Apply model to test set and calculate evaluation metrics
+
+
+
 
